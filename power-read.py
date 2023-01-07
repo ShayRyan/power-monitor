@@ -21,9 +21,20 @@ def parse_xml(xml_string):
         print(f'Element: {element.tag} -> {element.text}')
         for child in element:
             print(f'Child: {child.tag} -> {child.text}')
+
+    # return dict
+
 while 1:
     line = ser.readline()
     line = line.strip(b'\r\n')
     line = line.decode('utf-8')
     if line:
         parse_xml(line)
+
+# add main
+
+# add timestamp for time of receipt
+# print tor and message
+# write to CSV
+# write to SQLite DB
+
