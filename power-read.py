@@ -24,7 +24,7 @@ def parse_xml(xml_string):
 
     # return dict
 
-while 1:
+while True:
     line = ser.readline()
     line = line.strip(b'\r\n')
     line = line.decode('utf-8')
