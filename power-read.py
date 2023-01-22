@@ -54,29 +54,36 @@ def main():
             log_writer.writerow(header)
 
             while True:
+                # read CC128 from UART
+                line = ser.readline()
+
                 # Time of reading
                 now = datetime.now()
                 this_ts = datetime.timestamp(now)
                 local_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
-                line = ser.readline()
+                # process line
                 line = line.strip(b'\r\n')
                 line = line.decode('utf-8')
+
+                # ignore blank lines
                 if line:
                     decode_xml(line)
                     xml_dict = decode_xml(line)
-                    #print(xml_dict)
 
+                    # ignore energy history, 'watts' in power reading only
                     if 'watts' in xml_dict:
                         sensor_time = xml_dict['time'][0]
                         power = int(xml_dict['watts'][0])
                         tempr = float(xml_dict['tmpr'][0])
 
+                        # need time interval to calculate energy. Wait for 2nd reading.
                         if last_ts == 0:
                             energy = 0
                         else:
                             energy = calc_energy(power, (this_ts - last_ts))
 
+                        # write observation to log
                         row = [this_ts, local_time, sensor_time, tempr, power, energy]
                         log_writer.writerow(row)
 
@@ -84,6 +91,8 @@ def main():
                         #      f"Temp= {tempr} C Power= {power} W Energy= {energy} kWh")
 
                         last_ts = this_ts
+            # loop for next reading
+
     except KeyboardInterrupt:
         print("Keyboard interrupt detected, closing log file and exiting...")
     finally:
@@ -92,8 +101,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-# add main
 
 # add time of receipt time delta and sensor timestamp time delta
-# write to CSV
+# write to CSV - daily file
 # write to SQLite DB
