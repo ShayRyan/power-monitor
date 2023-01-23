@@ -1,7 +1,7 @@
 #!/usr/bin/env python
+from influxdb import InfluxDBClient
 from datetime import datetime
 import serial
-import csv
 import xml.etree.ElementTree as et
 
 ser = serial.Serial(
@@ -13,8 +13,10 @@ ser = serial.Serial(
     timeout=3
 )
 
-log_file_name = "log.csv"
-header = ['timestamp', 'local_time', 'sensor_time', 'temp', 'power', 'energy']
+client = InfluxDBClient(host='localhost',
+                        port=8086,
+                        username='energyuser',
+                        password='MirrorBeef#69')
 
 def decode_xml(xml_string):
     """Decode an XML string to the full extent from root to leaves."""
@@ -49,59 +51,49 @@ def main():
     last_ts = 0
 
     try:
-        with open(log_file_name, mode='w', newline='') as log_file:
-            log_writer = csv.writer(log_file)
-            log_writer.writerow(header)
+        while True:
+            # read CC128 from UART
+            line = ser.readline()
 
-            while True:
-                # read CC128 from UART
-                line = ser.readline()
+            # Time of reading
+            now = datetime.now()
+            this_ts = datetime.timestamp(now)
+            local_time = now.strftime("%Y-%m-%d %H:%M:%S")
 
-                # Time of reading
-                now = datetime.now()
-                this_ts = datetime.timestamp(now)
-                local_time = now.strftime("%Y-%m-%d %H:%M:%S")
+            # process line
+            line = line.strip(b'\r\n')
+            line = line.decode('utf-8')
 
-                # process line
-                line = line.strip(b'\r\n')
-                line = line.decode('utf-8')
+            # ignore blank lines
+            if line:
+                decode_xml(line)
+                xml_dict = decode_xml(line)
 
-                # ignore blank lines
-                if line:
-                    decode_xml(line)
-                    xml_dict = decode_xml(line)
+                # ignore energy history from cc128.
+                # power readings marked by 'watts' in xml keys
+                if 'watts' in xml_dict:
+                    sensor_time = xml_dict['time'][0]
+                    watts = int(xml_dict['watts'][0])
 
-                    # ignore energy history, 'watts' in power reading only
-                    if 'watts' in xml_dict:
-                        sensor_time = xml_dict['time'][0]
-                        power = int(xml_dict['watts'][0])
-                        tempr = float(xml_dict['tmpr'][0])
+                    # need time interval to calculate energy. Do not store 1st reading.
+                    if last_ts != 0:
+                        energy = calc_energy(watts, (this_ts - last_ts))
+                        interval = int(this_ts - last_ts)
+                        this_ts_us = int(this_ts * 1_000_000)
 
-                        # need time interval to calculate energy. Wait for 2nd reading.
-                        if last_ts == 0:
-                            energy = 0
-                        else:
-                            energy = calc_energy(power, (this_ts - last_ts))
+                        line = f'power,sensor=cc128 watts={watts}i,sensor_utc="{sensor_time}",interval={interval}i,kwh={energy}'
+                        #print(line)
+                        client.write([line], {'db': 'house_power'}, 204, protocol=u'line')
 
-                        # write observation to log
-                        row = [this_ts, local_time, sensor_time, tempr, power, energy]
-                        log_writer.writerow(row)
-
-                        #print(f"{local_time} -> Sensor Time= {sensor_time} "
-                        #      f"Temp= {tempr} C Power= {power} W Energy= {energy} kWh")
-
-                        last_ts = this_ts
+                    last_ts = this_ts
             # loop for next reading
 
     except KeyboardInterrupt:
         print("Keyboard interrupt detected, closing log file and exiting...")
     finally:
-        log_file.close()
+        client.close()
 
 if __name__ == "__main__":
     main()
 
 
-# add time of receipt time delta and sensor timestamp time delta
-# write to CSV - daily file
-# write to SQLite DB
